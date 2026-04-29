@@ -46,6 +46,70 @@ While the core functionality is working, please be aware that this is an early r
    WEBKIT_DISABLE_DMABUF_RENDERER=1 ./creamlinux.AppImage
    ```
 
+### Nix
+You can fetch this repository in your configuration using `pkgs.fetchFromGithub`:
+```nix
+let
+  creamlinux = pkgs.callPackage (pkgs.fetchFromGitHub {
+    owner = "Novattz";
+    repo = "creamlinux-installer";
+    rev = "main";
+    hash = ""; # You can use nix-prefetch-url to determine which value to put here, or paste the value returned by the error your rebuild will output
+  }) {};
+in
+{
+  environment.systemPackages = [ creamlinux ];
+}  
+```
+or, using `builtins.fetchTarball`:
+```nix
+let
+  creamlinux-src = builtins.fetchTarball {
+    url = "https://github.com/Novattz/creamlinux-installer/archive/main.tar.gz";
+    sha256 = ""; # See above
+  };
+in
+{
+  environment.systemPackages = [
+    (pkgs.callPackage creamlinux-src {})
+  ];
+}
+```
+alternatively and if you want to pin the package version, using [npins](https://github.com/andir/npins):
+```bash
+npins add github Novattz creamlinux-installer --branch main
+```
+```nix
+let
+  sources = import ./npins;
+  creamlinux = pkgs.callPackage sources.creamlinux-installer {};
+in
+{
+  environment.systemPackages = [ creamlinux ];
+}
+```
+Those are the recommended methods to add creamlinux-installer to your environment. However, you could also add it as an input of your flake, like so:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    creamlinux-installer = {
+      type = "github";
+      owner = "Novattz";
+      repo = "creamlinux-installer";
+      flake = false;
+    };
+  };
+}
+```
+Then, in your configuration:
+```nix
+environment.systemPackages = [
+  (pkgs.callPackage inputs.creamlinux-installer {})
+];
+```
+
 ### Building from Source
 
 #### Prerequisites
