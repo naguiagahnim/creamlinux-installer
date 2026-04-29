@@ -82,10 +82,11 @@ npins add github Novattz creamlinux-installer --branch main
 ```nix
 let
   sources = import ./npins;
-  creamlinux = pkgs.callPackage sources.creamlinux-installer {};
 in
 {
-  environment.systemPackages = [ creamlinux ];
+  environment.systemPackages = [
+    (pkgs.callPackage "${sources.creamlinux-installer}/default.nix" {})
+  ];
 }
 ```
 Those are the recommended methods to add creamlinux-installer to your environment. However, you could also add it as an input of your flake, like so:
