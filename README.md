@@ -109,6 +109,7 @@ environment.systemPackages = [
   (pkgs.callPackage inputs.creamlinux-installer {})
 ];
 ```
+Similarly to running the AppImage, you will need to set `WEBKIT_DISABLE_DMABUF_RENDERER=1` if your GPU is from Nvidia in order to run the package.
 
 ### Building from Source
 

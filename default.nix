@@ -3,7 +3,7 @@
   src = ./.;
 
   patchSassEmbedded = pkgs.writeShellScriptBin "patch-sass-embedded" ''
-    NIX_LD="${pkgs.lib.fileContents "${pkgs.stdenv.cc}/nix-support/dynamic-linker"}"
+    NIX_LD="$(cat ${pkgs.stdenv.cc}/nix-support/dynamic-linker)"
     for dart_bin in node_modules/sass-embedded-linux-*/dart-sass/src/dart; do
       if [ -f "$dart_bin" ]; then
         ${pkgs.patchelf}/bin/patchelf --set-interpreter "$NIX_LD" "$dart_bin"
