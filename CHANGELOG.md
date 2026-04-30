@@ -1,3 +1,10 @@
+## [1.5.5] - 30-04-2026
+
+### Added
+- Epic Games library scanning via Heroic/Legendary
+- ScreamAPI support (Tested and working with SnowRunner)
+- Koaloader support (currently not working, fix coming in a future update)
+
 ## [1.5.0] - 28-03-2026
 
 ### Added
