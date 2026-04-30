@@ -12,9 +12,13 @@ mod searcher;
 mod unlockers;
 mod smokeapi_config;
 mod config;
+mod epic_scanner;
+mod pe_inspector;
+mod screamapi_config;
 
 use crate::config::Config;
 use crate::unlockers::{CreamLinux, SmokeAPI, Unlocker};
+use epic_scanner::EpicGame;
 use dlc_manager::DlcInfoWithState;
 use installer::{Game, InstallerAction, InstallerType};
 use log::{debug, error, info, warn};
@@ -33,6 +37,22 @@ use tokio::time::Instant;
 pub struct GameAction {
     game_id: String,
     action: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum EpicAction {
+    InstallScream,
+    UninstallScream,
+    InstallKoaloader,
+    UninstallKoaloader,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct EpicGameAction {
+    pub game: EpicGame,
+    /// "install_scream" | "uninstall_scream" | "install_koaloader" | "uninstall_koaloader"
+    pub action: String,
 }
 
 #[derive(Debug, Clone)]
@@ -67,6 +87,14 @@ fn update_config(config_data: Config) -> Result<Config, String> {
 fn get_all_dlcs_command(game_path: String) -> Result<Vec<DlcInfoWithState>, String> {
     info!("Getting all DLCs (enabled and disabled) for: {}", game_path);
     dlc_manager::get_all_dlcs(&game_path)
+}
+
+#[tauri::command]
+async fn scan_epic_games() -> Result<Vec<EpicGame>, String> {
+    info!("Scanning for Epic games via Heroic...");
+    let games = epic_scanner::scan_epic_games();
+    info!("Found {} Epic games", games.len());
+    Ok(games)
 }
 
 #[tauri::command]
@@ -250,6 +278,70 @@ async fn process_game_action(
     }
 
     Ok(updated_game)
+}
+
+#[tauri::command]
+async fn process_epic_action(
+    epic_action: EpicGameAction,
+    app_handle: tauri::AppHandle,
+) -> Result<EpicGame, String> {
+    let mut game = epic_action.game;
+    let action = epic_action.action.as_str();
+ 
+    info!("Processing epic action '{}' for: {}", action, game.title);
+ 
+    game.proxy_fallback_used = false;
+ 
+    match action {
+        "install_scream" => {
+            installer::install_screamapi(game.clone(), app_handle.clone()).await
+                .map_err(|e| format!("Failed to install ScreamAPI: {}", e))?;
+            game.scream_installed = true;
+        }
+        "uninstall_scream" => {
+            installer::uninstall_screamapi(game.clone(), app_handle.clone()).await
+                .map_err(|e| format!("Failed to uninstall ScreamAPI: {}", e))?;
+            game.scream_installed = false;
+        }
+        "install_koaloader" => {
+            let fallback_used = installer::install_koaloader(game.clone(), app_handle.clone()).await
+                .map_err(|e| format!("Failed to install Koaloader: {}", e))?;
+            game.koaloader_installed = true;
+            game.proxy_fallback_used = fallback_used;
+        }
+        "uninstall_koaloader" => {
+            installer::uninstall_koaloader(game.clone(), app_handle.clone()).await
+                .map_err(|e| format!("Failed to uninstall Koaloader: {}", e))?;
+            game.koaloader_installed = false;
+        }
+        _ => return Err(format!("Invalid epic action: {}", action)),
+    }
+ 
+    if let Err(e) = app_handle.emit("epic-game-updated", &game) {
+        warn!("Failed to emit epic-game-updated event: {}", e);
+    }
+ 
+    Ok(game)
+}
+
+#[tauri::command]
+fn read_screamapi_config(
+    game_path: String,
+) -> Result<Option<screamapi_config::ScreamAPIConfig>, String> {
+    screamapi_config::read_config(&game_path)
+}
+ 
+#[tauri::command]
+fn write_screamapi_config(
+    game_path: String,
+    config: screamapi_config::ScreamAPIConfig,
+) -> Result<(), String> {
+    screamapi_config::write_config(&game_path, &config)
+}
+ 
+#[tauri::command]
+fn delete_screamapi_config(game_path: String) -> Result<(), String> {
+    screamapi_config::delete_config(&game_path)
 }
 
 #[tauri::command]
@@ -756,6 +848,11 @@ fn main() {
             submit_report,
             get_local_reports,
             get_game_votes,
+            scan_epic_games,
+            process_epic_action,
+            read_screamapi_config,
+            write_screamapi_config,
+            delete_screamapi_config,
         ])
         .setup(|app| {
             info!("Tauri application setup");
