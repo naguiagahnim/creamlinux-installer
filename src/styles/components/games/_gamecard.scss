@@ -41,6 +41,10 @@
   .status-badge.smoke {
     box-shadow: 0 0 10px rgba(255, 239, 150, 0.5);
   }
+
+  .status-badge.epic {
+    box-shadow: 0 0 10px rgba(15, 25, 35, 0.5);
+  }
 }
 
 // Special styling for cards with different statuses
@@ -54,6 +58,12 @@
   box-shadow:
     var(--shadow-standard),
     0 0 15px rgba(255, 239, 150, 0.15);
+}
+
+.game-item-card:has(.status-badge.epic) {
+  box-shadow:
+    var(--shadow-standard),
+    0 0 15px rgba(15, 25, 35, 0.15);
 }
 
 // Game item overlay
@@ -124,6 +134,11 @@
 .status-badge.smoke {
   background-color: var(--smoke);
   color: var(--text-heavy);
+}
+
+.status-badge.epic {
+  background-color: var(--epic);
+  color: var(--text-primary);
 }
 
 // Game title
