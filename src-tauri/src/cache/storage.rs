@@ -8,6 +8,8 @@ use std::path::PathBuf;
 pub struct CacheVersions {
     pub smokeapi: VersionInfo,
     pub creamlinux: VersionInfo,
+    pub screamapi: VersionInfo,
+    pub koaloader: VersionInfo,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -18,12 +20,10 @@ pub struct VersionInfo {
 impl Default for CacheVersions {
     fn default() -> Self {
         Self {
-            smokeapi: VersionInfo {
-                latest: String::new(),
-            },
-            creamlinux: VersionInfo {
-                latest: String::new(),
-            },
+            smokeapi: VersionInfo { latest: String::new() },
+            creamlinux: VersionInfo { latest: String::new() },
+            screamapi: VersionInfo { latest: String::new() },
+            koaloader: VersionInfo { latest: String::new() },
         }
     }
 }
@@ -63,6 +63,26 @@ pub fn get_smokeapi_dir() -> Result<PathBuf, String> {
     Ok(smokeapi_dir)
 }
 
+pub fn get_screamapi_dir() -> Result<PathBuf, String> {
+    let cache_dir = get_cache_dir()?;
+    let dir = cache_dir.join("screamapi");
+    if !dir.exists() {
+        fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create ScreamAPI directory: {}", e))?;
+    }
+    Ok(dir)
+}
+
+pub fn get_koaloader_dir() -> Result<PathBuf, String> {
+    let cache_dir = get_cache_dir()?;
+    let dir = cache_dir.join("koaloader");
+    if !dir.exists() {
+        fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create Koaloader directory: {}", e))?;
+    }
+    Ok(dir)
+}
+
 // Get the CreamLinux cache directory path
 pub fn get_creamlinux_dir() -> Result<PathBuf, String> {
     let cache_dir = get_cache_dir()?;
@@ -94,6 +114,24 @@ pub fn get_smokeapi_version_dir(version: &str) -> Result<PathBuf, String> {
     Ok(version_dir)
 }
 
+pub fn get_screamapi_version_dir(version: &str) -> Result<PathBuf, String> {
+    let dir = get_screamapi_dir()?.join(version);
+    if !dir.exists() {
+        fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create ScreamAPI version directory: {}", e))?;
+    }
+    Ok(dir)
+}
+
+pub fn get_koaloader_version_dir(version: &str) -> Result<PathBuf, String> {
+    let dir = get_koaloader_dir()?.join(version);
+    if !dir.exists() {
+        fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create Koaloader version directory: {}", e))?;
+    }
+    Ok(dir)
+}
+
 // Get the path to a versioned CreamLinux directory
 pub fn get_creamlinux_version_dir(version: &str) -> Result<PathBuf, String> {
     let creamlinux_dir = get_creamlinux_dir()?;
@@ -115,23 +153,43 @@ pub fn get_creamlinux_version_dir(version: &str) -> Result<PathBuf, String> {
 pub fn read_versions() -> Result<CacheVersions, String> {
     let cache_dir = get_cache_dir()?;
     let versions_path = cache_dir.join("versions.json");
-
+ 
     if !versions_path.exists() {
         info!("versions.json doesn't exist, creating default");
         return Ok(CacheVersions::default());
     }
-
+ 
     let content = fs::read_to_string(&versions_path)
         .map_err(|e| format!("Failed to read versions.json: {}", e))?;
-
-    let versions: CacheVersions = serde_json::from_str(&content)
+ 
+    // Parse into a raw Value first so we can inject missing fields without
+    // breaking on older versions.json files that predate new unlockers.
+    let mut raw: serde_json::Value = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse versions.json: {}", e))?;
-
+ 
+    let empty = serde_json::json!({ "latest": "" });
+ 
+    if let Some(obj) = raw.as_object_mut() {
+        if !obj.contains_key("smokeapi")  { obj.insert("smokeapi".into(),  empty.clone()); }
+        if !obj.contains_key("creamlinux") { obj.insert("creamlinux".into(), empty.clone()); }
+        if !obj.contains_key("screamapi") { obj.insert("screamapi".into(),  empty.clone()); }
+        if !obj.contains_key("koaloader") { obj.insert("koaloader".into(),  empty.clone()); }
+    }
+ 
+    let versions: CacheVersions = serde_json::from_value(raw)
+        .map_err(|e| format!("Failed to deserialize versions.json: {}", e))?;
+ 
+    // If we injected any missing fields, persist them so the file is up to date
+    write_versions(&versions)?;
+ 
     info!(
-        "Read cached versions - SmokeAPI: {}, CreamLinux: {}",
-        versions.smokeapi.latest, versions.creamlinux.latest
+        "Read cached versions - SmokeAPI: {}, CreamLinux: {}, ScreamAPI: {}, Koaloader: {}",
+        versions.smokeapi.latest,
+        versions.creamlinux.latest,
+        versions.screamapi.latest,
+        versions.koaloader.latest,
     );
-
+ 
     Ok(versions)
 }
 
@@ -147,8 +205,11 @@ pub fn write_versions(versions: &CacheVersions) -> Result<(), String> {
         .map_err(|e| format!("Failed to write versions.json: {}", e))?;
 
     info!(
-        "Wrote versions.json - SmokeAPI: {}, CreamLinux: {}",
-        versions.smokeapi.latest, versions.creamlinux.latest
+        "Read cached versions - SmokeAPI: {}, CreamLinux: {}, ScreamAPI: {}, Koaloader: {}",
+        versions.smokeapi.latest,
+        versions.creamlinux.latest,
+        versions.screamapi.latest,
+        versions.koaloader.latest,
     );
 
     Ok(())
@@ -176,6 +237,34 @@ pub fn update_smokeapi_version(new_version: &str) -> Result<(), String> {
         }
     }
 
+    Ok(())
+}
+
+pub fn update_screamapi_version(new_version: &str) -> Result<(), String> {
+    let mut versions = read_versions()?;
+    let old_version = versions.screamapi.latest.clone();
+    versions.screamapi.latest = new_version.to_string();
+    write_versions(&versions)?;
+    if !old_version.is_empty() && old_version != new_version {
+        let old_dir = get_screamapi_dir()?.join(&old_version);
+        if old_dir.exists() {
+            let _ = fs::remove_dir_all(&old_dir);
+        }
+    }
+    Ok(())
+}
+
+pub fn update_koaloader_version(new_version: &str) -> Result<(), String> {
+    let mut versions = read_versions()?;
+    let old_version = versions.koaloader.latest.clone();
+    versions.koaloader.latest = new_version.to_string();
+    write_versions(&versions)?;
+    if !old_version.is_empty() && old_version != new_version {
+        let old_dir = get_koaloader_dir()?.join(&old_version);
+        if old_dir.exists() {
+            let _ = fs::remove_dir_all(&old_dir);
+        }
+    }
     Ok(())
 }
 
@@ -319,6 +408,30 @@ pub fn validate_smokeapi_cache(version: &str) -> Result<bool, String> {
     }
 
     Ok(true)
+}
+
+pub fn validate_screamapi_cache(version: &str) -> Result<bool, String> {
+    let version_dir = get_screamapi_version_dir(version)?;
+    if !version_dir.exists() {
+        return Ok(false);
+    }
+    let required = ["ScreamAPI32.dll", "ScreamAPI64.dll"];
+    for file in &required {
+        if !version_dir.join(file).exists() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+pub fn validate_koaloader_cache(version: &str) -> Result<bool, String> {
+    let version_dir = get_koaloader_version_dir(version)?;
+    if !version_dir.exists() {
+        return Ok(false);
+    }
+    // Check for at least one proxy folder (version-64 is universally present)
+    let check = version_dir.join("version-64").join("version.dll");
+    Ok(check.exists())
 }
 
 /// Validate that all required files exist for CreamLinux
