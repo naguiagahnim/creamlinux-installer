@@ -1,5 +1,5 @@
 import { createContext } from 'react'
-import { Game, DlcInfo } from '@/types'
+import { Game, DlcInfo, EpicGame } from '@/types'
 import { ActionType } from '@/components/buttons/ActionButton'
 import { DlcDialogState } from '@/hooks/useDlcManager'
 
@@ -48,6 +48,16 @@ export interface AppContextType {
   handleGameEdit: (gameId: string) => void
   handleDlcDialogClose: () => void
   handleUpdateDlcs: (gameId: string) => Promise<void>
+
+  // Epic Games
+  epicGames: EpicGame[]
+  epicLoading: boolean
+  epicInstallingId: string | null
+  loadEpicGames: () => Promise<void>
+  handleEpicInstall: (game: EpicGame) => void
+  handleEpicUninstallScream: (game: EpicGame) => void
+  handleEpicUninstallKoaloader: (game: EpicGame) => void
+  handleEpicSettings: (game: EpicGame) => void
 
   // Game actions
   progressDialog: ProgressDialogState

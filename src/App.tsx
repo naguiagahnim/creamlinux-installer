@@ -25,7 +25,7 @@ import {
 } from '@/components/dialogs'
 
 // Game components
-import { GameList } from '@/components/games'
+import { GameList, EpicGameList } from '@/components/games'
 
 /**
  * Main application component
@@ -71,11 +71,25 @@ function App() {
     handleSelectCreamLinux,
     handleSelectSmokeAPI,
     closeUnlockerDialog,
+    epicGames,
+    epicLoading,
+    epicInstallingId,
+    loadEpicGames,
+    handleEpicInstall,
+    handleEpicUninstallScream,
+    handleEpicUninstallKoaloader,
+    handleEpicSettings,
   } = useAppContext()
 
   // Conflict detection
-  const { conflicts, showDialog, resolveConflict, closeDialog } =
-    useConflictDetection(games)
+  const { conflicts, showDialog, resolveConflict, closeDialog } = useConflictDetection(games)
+
+  const handleSetFilter = async (f: string) => {
+    setFilter(f)
+    if (f === 'epic' && epicGames.length === 0 && !epicLoading) {
+      await loadEpicGames()
+    }
+  }
 
   // Handle conflict resolution
   const handleConflictResolve = async (
@@ -126,13 +140,22 @@ function App() {
         <div className="main-content">
           {/* Sidebar for filtering */}
           <Sidebar
-            setFilter={setFilter}
+            setFilter={handleSetFilter}
             currentFilter={filter}
             onSettingsClick={handleSettingsOpen}
           />
 
-          {/* Show error or game list */}
-          {error ? (
+          {filter === 'epic' ? (
+            <EpicGameList
+              games={epicGames}
+              isLoading={epicLoading}
+              installingId={epicInstallingId}
+              onInstall={handleEpicInstall}
+              onUninstallScream={handleEpicUninstallScream}
+              onUninstallKoaloader={handleEpicUninstallKoaloader}
+              onSettings={handleEpicSettings}
+            />
+          ) : error ? (
             <div className="error-message">
               <h3>Error Loading Games</h3>
               <p>{error}</p>

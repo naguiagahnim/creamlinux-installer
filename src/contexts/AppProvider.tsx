@@ -1,11 +1,12 @@
 import { ReactNode, useState, useEffect } from 'react'
 import { AppContext, AppContextType } from './AppContext'
 import { useGames, useDlcManager, useGameActions, useToasts } from '@/hooks'
-import { DlcInfo, Config } from '@/types'
+import { DlcInfo, Config, EpicGame } from '@/types'
 import { ActionType } from '@/components/buttons/ActionButton'
 import { ToastContainer } from '@/components/notifications'
-import { SmokeAPISettingsDialog, OptInDialog, RatingDialog, SmokeAPIVotesDialog } from '@/components/dialogs'
+import { SmokeAPISettingsDialog, OptInDialog, RatingDialog, SmokeAPIVotesDialog, EpicUnlockerSelectionDialog, ScreamAPISettingsDialog } from '@/components/dialogs'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 
 // Context provider component
 interface AppProviderProps {
@@ -42,6 +43,20 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
   // Settings dialog state
   const [settingsDialog, setSettingsDialog] = useState({ visible: false })
+
+  const [epicGames, setEpicGames] = useState<EpicGame[]>([])
+  const [epicLoading, setEpicLoading] = useState(false)
+  const [epicInstallingId, setEpicInstallingId] = useState<string | null>(null)
+
+  const [epicUnlockerDialog, setEpicUnlockerDialog] = useState<{
+    visible: boolean
+    game: EpicGame | null
+  }>({ visible: false, game: null })
+
+  const [screamSettingsDialog, setScreamSettingsDialog] = useState<{
+    visible: boolean
+    game: EpicGame | null
+  }>({ visible: false, game: null })
 
   // SmokeAPI settings dialog state
   const [smokeAPISettingsDialog, setSmokeAPISettingsDialog] = useState<{
@@ -94,6 +109,91 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       })
       .catch((err) => console.error('Failed to load config for reporting check:', err))
   }, [])
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined
+    listen<EpicGame>('epic-game-updated', (event) => {
+      const updated = event.payload
+      const prev = epicGames.find((g) => g.app_name === updated.app_name)
+    
+      setEpicGames((games) =>
+        games.map((g) => (g.app_name === updated.app_name ? updated : g))
+      )
+      setEpicInstallingId(null)
+    
+      // Determine what changed and show appropriate toast
+      if (prev) {
+        const installedScream = !prev.scream_installed && updated.scream_installed
+        const uninstalledScream = prev.scream_installed && !updated.scream_installed
+        const installedKoa = !prev.koaloader_installed && updated.koaloader_installed
+        const uninstalledKoa = prev.koaloader_installed && !updated.koaloader_installed
+      
+        if (installedScream) {
+          success(`ScreamAPI installed for ${updated.title}`)
+        } else if (uninstalledScream) {
+          info(`ScreamAPI removed from ${updated.title}`)
+        } else if (installedKoa) {
+          success(`Koaloader installed for ${updated.title}`)
+        } else if (uninstalledKoa) {
+          info(`Koaloader removed from ${updated.title}`)
+        }
+      
+        if (updated.proxy_fallback_used) {
+          warning(
+            'No compatible proxy import found - installed using version.dll as a fallback. ' +
+            'If the game has issues, try the direct ScreamAPI method instead.'
+          )
+        }
+      }
+    }).then((fn) => { unlisten = fn })
+    return () => { unlisten?.() }
+  }, [epicGames, success, info, warning])
+
+  const loadEpicGames = async () => {
+    setEpicLoading(true)
+    try {
+      const games = await invoke<EpicGame[]>('scan_epic_games')
+      setEpicGames(games)
+    } catch (e) {
+      showError(`Failed to scan Epic games: ${e}`)
+    } finally {
+      setEpicLoading(false)
+    }
+  }
+
+  const runEpicAction = async (game: EpicGame, action: string) => {
+    setEpicInstallingId(game.app_name)
+    try {
+      await invoke('process_epic_action', { epicAction: { game, action } })
+      // state updated via epic-game-updated event listener
+    } catch (e) {
+      showError(`Action failed: ${e}`)
+      setEpicInstallingId(null)
+    }
+  }
+
+  const handleEpicInstall = (game: EpicGame) => {
+    setEpicUnlockerDialog({ visible: true, game })
+  }
+
+  const handleEpicUninstallScream = (game: EpicGame) => runEpicAction(game, 'uninstall_scream')
+  const handleEpicUninstallKoaloader = (game: EpicGame) => runEpicAction(game, 'uninstall_koaloader')
+
+  const handleEpicSettings = (game: EpicGame) => {
+    setScreamSettingsDialog({ visible: true, game })
+  }
+
+  const handleSelectScreamAPI = () => {
+    const game = epicUnlockerDialog.game
+    setEpicUnlockerDialog({ visible: false, game: null })
+    if (game) runEpicAction(game, 'install_scream')
+  }
+
+  const handleSelectKoaloader = () => {
+    const game = epicUnlockerDialog.game
+    setEpicUnlockerDialog({ visible: false, game: null })
+    if (game) runEpicAction(game, 'install_koaloader')
+  }
 
   // Settings handlers
   const handleSettingsOpen = () => {
@@ -366,6 +466,16 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     handleDlcDialogClose: closeDlcDialog,
     handleUpdateDlcs: (gameId: string) => handleUpdateDlcs(gameId),
 
+    // Epic games
+    epicGames,
+    epicLoading,
+    epicInstallingId,
+    loadEpicGames,
+    handleEpicInstall,
+    handleEpicUninstallScream,
+    handleEpicUninstallKoaloader,
+    handleEpicSettings,
+
     // Game actions
     progressDialog,
     handleGameAction,
@@ -456,6 +566,23 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         onClose={handleSmokeAPISettingsClose}
         gamePath={smokeAPISettingsDialog.gamePath}
         gameTitle={smokeAPISettingsDialog.gameTitle}
+      />
+
+      {/* Epic Unlocker Selection Dialog */}
+      <EpicUnlockerSelectionDialog
+        visible={epicUnlockerDialog.visible}
+        game={epicUnlockerDialog.game}
+        onClose={() => setEpicUnlockerDialog({ visible: false, game: null })}
+        onSelectScreamAPI={handleSelectScreamAPI}
+        onSelectKoaloader={handleSelectKoaloader}
+      />
+
+      {/* ScreamAPI Settings Dialog */}
+      <ScreamAPISettingsDialog
+        visible={screamSettingsDialog.visible}
+        onClose={() => setScreamSettingsDialog({ visible: false, game: null })}
+        gamePath={screamSettingsDialog.game?.install_path ?? ''}
+        gameTitle={screamSettingsDialog.game?.title ?? ''}
       />
 
       {/* SmokeAPI Votes Dialog */}
