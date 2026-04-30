@@ -5,7 +5,7 @@ pub use storage::{
     get_creamlinux_version_dir, get_smokeapi_version_dir,
     list_creamlinux_files, list_smokeapi_files, read_versions, 
     update_creamlinux_version, update_smokeapi_version, validate_smokeapi_cache,
-    validate_creamlinux_cache, get_cache_dir,
+    validate_creamlinux_cache, get_cache_dir, get_koaloader_version_dir, get_screamapi_version_dir,
 };
 
 pub use version::{
@@ -14,7 +14,7 @@ pub use version::{
     update_smokeapi_version as update_game_smokeapi_version,
 };
 
-use crate::unlockers::{CreamLinux, SmokeAPI, Unlocker};
+use crate::{cache::storage::{update_koaloader_version, update_screamapi_version, validate_koaloader_cache, validate_screamapi_cache}, unlockers::{CreamLinux, Koaloader, ScreamAPI, SmokeAPI, Unlocker}};
 use log::{error, info, warn};
 use std::collections::HashMap;
 
@@ -26,6 +26,8 @@ pub async fn initialize_cache() -> Result<(), String> {
     let versions = read_versions()?;
     let mut needs_smokeapi = false;
     let mut needs_creamlinux = false;
+    let mut needs_screamapi = false;
+    let mut needs_koaloader = false;
 
     // Check if SmokeAPI is properly cached
     if versions.smokeapi.latest.is_empty() {
@@ -68,6 +70,46 @@ pub async fn initialize_cache() -> Result<(), String> {
         }
     }
 
+    // Check if ScreamAPI is properly cached
+    if versions.screamapi.latest.is_empty() {
+        info!("No ScreamAPI version in manifest");
+        needs_screamapi = true
+    } else {
+        match validate_screamapi_cache(&versions.screamapi.latest) {
+            Ok(true) => {
+                info!("ScreamAPI cache validated successfully");
+            }
+            Ok(false) => {
+                info!("ScreamAPI cache incomplete, re-downloading");
+                needs_smokeapi = true;
+            }
+            Err(e) => {
+                warn!("Failed to validate ScreamAPI cache: {}, re-downloading", e);
+                needs_screamapi = true;
+            }
+        }
+    }
+
+    // Check if Koaloader is properly cached
+    if versions.koaloader.latest.is_empty() {
+        info!("No Koaloader version in manifest");
+        needs_koaloader = true
+    } else {
+        match validate_koaloader_cache(&versions.koaloader.latest) {
+            Ok(true) => {
+                info!("Koaloader cache validated successfully");
+            }
+            Ok(false) => {
+                info!("Koaloader cache incomplete, re-downloading");
+                needs_koaloader = true;
+            }
+            Err(e) => {
+                warn!("Failed to validate Koaloader cache: {}, re-downloading", e);
+                needs_koaloader = true;
+            }
+        }
+    }
+
     // Download SmokeAPI
     if needs_smokeapi {
         info!("Downloading SmokeAPI...");
@@ -98,7 +140,37 @@ pub async fn initialize_cache() -> Result<(), String> {
         }
     }
 
-    if !needs_smokeapi && !needs_creamlinux {
+    // Download ScreamAPI
+    if needs_screamapi {
+        info!("Downloading ScreamAPI...");
+        match ScreamAPI::download_to_cache().await {
+            Ok(version) => {
+                info!("Downloaded ScreamAPI version: {}", version);
+                update_screamapi_version(&version)?;
+            }
+            Err(e) => {
+                error!("Failed to download SmokeAPI: {}", e);
+                return Err(format!("Failed to download ScreamAPI: {}", e));
+            }
+        }
+    }
+
+    // Download Koaloader
+    if needs_koaloader {
+        info!("Downloading Koaloader...");
+        match Koaloader::download_to_cache().await {
+            Ok(version) => {
+                info!("Downloaded Koaloader version: {}", version);
+                update_koaloader_version(&version)?;
+            }
+            Err(e) => {
+                error!("Failed to download Koaloader: {}", e);
+                return Err(format!("Failed to download Koaloader: {}", e));
+            }
+        }
+    }
+
+    if !needs_smokeapi && !needs_creamlinux && !needs_smokeapi && !needs_koaloader {
         info!("Cache already initialized and validated");
     } else {
         info!("Cache initialization complete");
