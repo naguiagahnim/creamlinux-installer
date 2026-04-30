@@ -1,8 +1,12 @@
 mod creamlinux;
 mod smokeapi;
+pub mod koaloader;
+mod screamapi;
 
 pub use creamlinux::CreamLinux;
 pub use smokeapi::SmokeAPI;
+pub use screamapi::ScreamAPI;
+pub use koaloader::Koaloader;
 
 use async_trait::async_trait;
 
