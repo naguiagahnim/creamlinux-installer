@@ -38,6 +38,7 @@ export const linux = 'Linux'
 export const proton = 'Proton'
 export const steam = 'Steam'
 export const windows = 'Windows'
+export const epic = 'Epic'
 
 // Keep the IconNames object for backward compatibility and autocompletion
 export const IconNames = {
@@ -69,6 +70,7 @@ export const IconNames = {
   Proton: proton,
   Steam: steam,
   Windows: windows,
+  Epic: epic,
 } as const
 
 // Export direct icon components using createIconComponent from IconFactory
