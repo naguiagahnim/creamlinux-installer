@@ -4,7 +4,8 @@ use crate::cache::{
     remove_creamlinux_version, remove_smokeapi_version,
     update_game_creamlinux_version, update_game_smokeapi_version,
 };
-use crate::unlockers::{CreamLinux, SmokeAPI, Unlocker};
+use crate::unlockers::{CreamLinux, SmokeAPI, ScreamAPI, Unlocker};
+use crate::epic_scanner::EpicGame;
 use crate::AppState;
 use log::{error, info, warn};
 use reqwest;
@@ -437,6 +438,215 @@ async fn uninstall_smokeapi_native(game: Game, app_handle: AppHandle) -> Result<
     );
 
     info!("SmokeAPI (native) uninstallation completed for: {}", game_title);
+    Ok(())
+}
+
+pub async fn install_screamapi(game: EpicGame, app_handle: AppHandle) -> Result<(), String> {
+    let title = game.title.clone();
+    info!("Installing ScreamAPI for: {}", title);
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Installing ScreamAPI for {}", title),
+        "Scanning for EOS SDK DLLs...",
+        15.0, false, false, None,
+    );
+ 
+    let eos_dlls = crate::unlockers::ScreamAPI::find_eossdk_dlls(
+        std::path::Path::new(&game.install_path)
+    );
+    if eos_dlls.is_empty() {
+        return Err(format!("No EOSSDK-Win*-Shipping.dll found in {}", game.install_path));
+    }
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Installing ScreamAPI for {}", title),
+        &format!("Replacing {} EOS SDK DLL(s)...", eos_dlls.len()),
+        50.0, false, false, None,
+    );
+ 
+    ScreamAPI::install_to_game(&game.install_path, "")
+        .await
+        .map_err(|e| format!("Failed to install ScreamAPI: {}", e))?;
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Installation Complete: {}", title),
+        "ScreamAPI installed successfully!",
+        100.0, true, false, None,
+    );
+ 
+    info!("ScreamAPI installation complete for: {}", title);
+    Ok(())
+}
+
+pub async fn uninstall_screamapi(game: EpicGame, app_handle: AppHandle) -> Result<(), String> {
+    let title = game.title.clone();
+    info!("Uninstalling ScreamAPI from: {}", title);
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Uninstalling ScreamAPI from {}", title),
+        "Restoring original EOS SDK DLLs...",
+        30.0, false, false, None,
+    );
+ 
+    ScreamAPI::uninstall_from_game(&game.install_path, "")
+        .await
+        .map_err(|e| format!("Failed to uninstall ScreamAPI: {}", e))?;
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Uninstallation Complete: {}", title),
+        "ScreamAPI removed successfully!",
+        100.0, true, false, None,
+    );
+ 
+    info!("ScreamAPI uninstallation complete for: {}", title);
+    Ok(())
+}
+
+/// Returns is_fallback so process_epic_action can set proxy_fallback_used.
+pub async fn install_koaloader(
+    game: EpicGame,
+    app_handle: AppHandle,
+) -> Result<bool, String> {
+    let title = game.title.clone();
+    info!("Installing Koaloader for: {}", title);
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Installing Koaloader for {}", title),
+        "Locating game executable...",
+        10.0, false, false, None,
+    );
+ 
+    let exe_path = crate::unlockers::Koaloader::resolve_exe_pub(&game.install_path, &game.executable)?;
+    let exe_dir = exe_path.parent().ok_or("Failed to get executable directory")?;
+    let is_64bit = crate::pe_inspector::is_64bit_exe(&exe_path);
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Installing Koaloader for {}", title),
+        "Scanning PE imports for best proxy DLL...",
+        30.0, false, false, None,
+    );
+ 
+    let scan = crate::pe_inspector::find_best_proxy(&exe_path);
+    let proxy_stem = scan.proxy_name.trim_end_matches(".dll").to_string();
+    let is_fallback = scan.is_fallback;
+ 
+    info!("Selected proxy: {} (fallback={})", scan.proxy_name, is_fallback);
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Installing Koaloader for {}", title),
+        &format!("Installing proxy DLL ({})...", scan.proxy_name),
+        50.0, false, false, None,
+    );
+ 
+    let proxy_src = crate::unlockers::Koaloader::get_proxy_dll(&proxy_stem, is_64bit)?;
+    std::fs::copy(&proxy_src, exe_dir.join(&scan.proxy_name))
+        .map_err(|e| format!("Failed to copy Koaloader proxy DLL: {}", e))?;
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Installing Koaloader for {}", title),
+        "Installing ScreamAPI payload...",
+        70.0, false, false, None,
+    );
+ 
+    let exe_dir_str = exe_dir.to_string_lossy().to_string();
+    ScreamAPI::install_to_game(&exe_dir_str, "koaloader")
+        .await
+        .map_err(|e| format!("Failed to install ScreamAPI payload: {}", e))?;
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Installing Koaloader for {}", title),
+        "Writing configuration files...",
+        88.0, false, false, None,
+    );
+ 
+    let exe_name = exe_path.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let koa_config = serde_json::json!({
+        "logging": false,
+        "enabled": true,
+        "auto_load": true,
+        "targets": [exe_name],
+        "modules": []
+    });
+    std::fs::write(
+        exe_dir.join("Koaloader.config.json"),
+        serde_json::to_string_pretty(&koa_config).unwrap(),
+    )
+    .map_err(|e| format!("Failed to write Koaloader config: {}", e))?;
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Installation Complete: {}", title),
+        "Koaloader + ScreamAPI installed successfully!",
+        100.0, true, false, None,
+    );
+ 
+    info!("Koaloader installation complete for: {}", title);
+    Ok(is_fallback)
+}
+
+pub async fn uninstall_koaloader(game: EpicGame, app_handle: AppHandle) -> Result<(), String> {
+    let title = game.title.clone();
+    info!("Uninstalling Koaloader from: {}", title);
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Uninstalling Koaloader from {}", title),
+        "Removing proxy DLL...",
+        25.0, false, false, None,
+    );
+ 
+    let exe_path = crate::unlockers::Koaloader::resolve_exe_pub(&game.install_path, &game.executable)?;
+    let exe_dir = exe_path.parent().ok_or("Failed to get executable directory")?;
+    let exe_dir_str = exe_dir.to_string_lossy().to_string();
+ 
+    // Remove Koaloader config
+    let koa_config_path = exe_dir.join("Koaloader.config.json");
+    if koa_config_path.exists() {
+        std::fs::remove_file(&koa_config_path)
+            .map_err(|e| format!("Failed to remove Koaloader config: {}", e))?;
+    }
+ 
+    // Remove any Koaloader proxy DLL
+    if let Ok(entries) = std::fs::read_dir(exe_dir) {
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            let name_lower = path.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+            if crate::unlockers::koaloader::KOA_VARIANTS.contains(&name_lower.as_str()) {
+                std::fs::remove_file(&path).ok();
+                info!("Removed proxy DLL: {}", path.display());
+            }
+        }
+    }
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Uninstalling Koaloader from {}", title),
+        "Removing ScreamAPI files...",
+        65.0, false, false, None,
+    );
+ 
+    ScreamAPI::uninstall_from_game(&exe_dir_str, "koaloader")
+        .await
+        .map_err(|e| format!("Failed to remove ScreamAPI payload: {}", e))?;
+ 
+    emit_progress(
+        &app_handle,
+        &format!("Uninstallation Complete: {}", title),
+        "Koaloader + ScreamAPI removed successfully!",
+        100.0, true, false, None,
+    );
+ 
+    info!("Koaloader uninstallation complete for: {}", title);
     Ok(())
 }
 
