@@ -1,4 +1,5 @@
 import { Icon, layers, linux, proton, settings } from '@/components/icons'
+import { epic } from '@/components/icons'
 import { Button } from '@/components/buttons'
 
 interface SidebarProps {
@@ -7,7 +8,6 @@ interface SidebarProps {
   onSettingsClick: () => void
 }
 
-// Define a type for filter items that makes variant optional
 type FilterItem = {
   id: string
   label: string
@@ -15,17 +15,29 @@ type FilterItem = {
   variant?: string
 }
 
-/**
- * Application sidebar component
- * Contains filters for game types
- */
 const Sidebar = ({ setFilter, currentFilter, onSettingsClick }: SidebarProps) => {
-  // Available filter options with icons
-  const filters: FilterItem[] = [
+  const steamFilters: FilterItem[] = [
     { id: 'all', label: 'All Games', icon: layers, variant: 'solid' },
     { id: 'native', label: 'Native', icon: linux, variant: 'brand' },
-    { id: 'proton', label: 'Proton Required', icon: proton, variant: 'brand' },
+    { id: 'proton', label: 'Proton', icon: proton, variant: 'brand' },
   ]
+
+  const epicFilters: FilterItem[] = [
+    { id: 'epic', label: 'All Games', icon: epic, variant: 'brand' },
+  ]
+
+  const renderFilter = (filter: FilterItem) => (
+    <li
+      key={filter.id}
+      className={currentFilter === filter.id ? 'active' : ''}
+      onClick={() => setFilter(filter.id)}
+    >
+      <div className="filter-item">
+        <Icon name={filter.icon} variant={filter.variant} size="md" className="filter-icon" />
+        <span>{filter.label}</span>
+      </div>
+    </li>
+  )
 
   return (
     <div className="sidebar">
@@ -33,20 +45,19 @@ const Sidebar = ({ setFilter, currentFilter, onSettingsClick }: SidebarProps) =>
         <h2>Library</h2>
       </div>
 
-      <ul className="filter-list">
-        {filters.map((filter) => (
-          <li
-            key={filter.id}
-            className={currentFilter === filter.id ? 'active' : ''}
-            onClick={() => setFilter(filter.id)}
-          >
-            <div className="filter-item">
-              <Icon name={filter.icon} variant={filter.variant} size="md" className="filter-icon" />
-              <span>{filter.label}</span>
-            </div>
-          </li>
-        ))}
-      </ul>
+      <div className="sidebar-section">
+        <span className="sidebar-section-label">Steam</span>
+        <ul className="filter-list">
+          {steamFilters.map(renderFilter)}
+        </ul>
+      </div>
+
+      <div className="sidebar-section">
+        <span className="sidebar-section-label">Epic Games</span>
+        <ul className="filter-list">
+          {epicFilters.map(renderFilter)}
+        </ul>
+      </div>
 
       <Button
         variant="secondary"
@@ -58,7 +69,6 @@ const Sidebar = ({ setFilter, currentFilter, onSettingsClick }: SidebarProps) =>
       >
         Settings
       </Button>
-
     </div>
   )
 }
