@@ -48,32 +48,30 @@ While the core functionality is working, please be aware that this is an early r
    ```
 
 ### Nix
-You can fetch this repository in your configuration using `pkgs.fetchFromGithub`:
+You can add this package to your configuration using `pkgs.fetchFromGitHub`:
 ```nix
 let
-  creamlinux = pkgs.callPackage (pkgs.fetchFromGitHub {
+  creamlinux = import (pkgs.fetchFromGitHub {
     owner = "Novattz";
     repo = "creamlinux-installer";
-    rev = "main";
-    hash = ""; # You can use nix-prefetch-url to determine which value to put here, or paste the value returned by the error your rebuild will output
-  }) {};
+    rev = "main"; # replace with a commit hash to pin the version
+    hash = ""; # paste the value returned by the error your rebuild will output
+  }) { inherit pkgs; };
 in
 {
   environment.systemPackages = [ creamlinux ];
-}  
+}
 ```
 or, using `builtins.fetchTarball`:
 ```nix
 let
-  creamlinux-src = builtins.fetchTarball {
+  creamlinux = import (builtins.fetchTarball {
     url = "https://github.com/Novattz/creamlinux-installer/archive/main.tar.gz";
     sha256 = ""; # See above
-  };
+  }) { inherit pkgs; };
 in
 {
-  environment.systemPackages = [
-    (pkgs.callPackage creamlinux-src {})
-  ];
+  environment.systemPackages = [ creamlinux ];
 }
 ```
 alternatively and if you want to pin the package version, using [npins](https://github.com/andir/npins):
@@ -86,12 +84,11 @@ let
 in
 {
   environment.systemPackages = [
-    (pkgs.callPackage "${sources.creamlinux-installer}/default.nix" {})
+    (import sources.creamlinux-installer { inherit pkgs; })
   ];
 }
 ```
 Those are the recommended methods to add creamlinux-installer to your environment. However, you could also add it as an input of your flake, like so:
-
 ```nix
 {
   inputs = {
@@ -108,7 +105,7 @@ Those are the recommended methods to add creamlinux-installer to your environmen
 Then, in your configuration:
 ```nix
 environment.systemPackages = [
-  (pkgs.callPackage inputs.creamlinux-installer {})
+  (import inputs.creamlinux-installer { inherit pkgs; })
 ];
 ```
 Similarly to running the AppImage, you will need to set `WEBKIT_DISABLE_DMABUF_RENDERER=1` if your GPU is from Nvidia in order to run the package.
